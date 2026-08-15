@@ -4,13 +4,11 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 
-# Services import
 from services.vision_service import remove_background
 from services.audio_service import denoise_audio
 
 app = FastAPI(title="AI Media Cleanup")
 
-# Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,7 +25,6 @@ def read_root():
 def health_check():
     return {"status": "ok"}
 
-# Vision endpoint matching frontend call exactly
 @app.post("/api/vision/remove-bg")
 async def vision_remove_bg(file: UploadFile = File(...)):
     try:
@@ -37,7 +34,6 @@ async def vision_remove_bg(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Audio endpoint matching frontend call exactly
 @app.post("/api/audio/clean")
 async def audio_clean(file: UploadFile = File(...)):
     try:
