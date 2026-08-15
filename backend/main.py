@@ -1,48 +1,33 @@
 import os
-import uvicorn
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import Response
-from fastapi.middleware.cors import CORSMiddleware
+import requests
+import io
+from PIL import Image
 
-from services.vision_service import remove_background
-from services.audio_service import denoise_audio
+HF_TOKEN = os.environ.get("HF_TOKEN", "")
+API_URL = "https://api-inference.huggingface.co/models/briaai/RMBG-1.4"
 
-app = FastAPI(title="AI Media Cleanup")
+def remove_background(image_bytes: bytes) -> bytes:
+    if not HF_TOKEN:
+        raise Exception("HF_TOKEN is not set in Render environment variables.")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    headers = {
+        "Authorization": f"Bearer {HF_TOKEN}"
+    }
 
-@app.get("/")
-def read_root():
-    return {"status": "ok", "message": "AI Media Cleanup API is running"}
+    # Hugging Face inference call
+    response = requests.post(API_URL, headers=headers, data=image_bytes, timeout=45)
 
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
+    if response.status_code != 200:
+        # Detailed error log for Render logs
+        print(f"HF Error Status: {response.status_code}, Body: {response.text}")
+        raise Exception(f"Hugging Face API failed ({response.status_code}): {response.text}")
 
-@app.post("/api/vision/remove-bg")
-async def vision_remove_bg(file: UploadFile = File(...)):
+    # Ensure output is a valid PNG
     try:
-        contents = await file.read()
-        output_bytes = remove_background(contents)
-        return Response(content=output_bytes, media_type="image/png")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/audio/clean")
-async def audio_clean(file: UploadFile = File(...)):
-    try:
-        contents = await file.read()
-        output_bytes = denoise_audio(contents)
-        return Response(content=output_bytes, media_type="audio/wav")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+        result_img = Image.open(io.BytesIO(response.content)).convert("RGBA")
+        out_io = io.BytesIO()
+        result_img.save(out_io, format="PNG")
+        return out_io.getvalue()
+    except Exception as img_err:
+        print(f"Image parse error: {img_err}, Response was: {response.content[:200]}")
+        return response.content
