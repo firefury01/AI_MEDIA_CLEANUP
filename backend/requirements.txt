@@ -8,3 +8,4 @@ numpy>=1.26.0
 rembg>=2.0.50
 pillow>=10.2.0
 onnxruntime>=1.17.0
+requests

@@ -1,18 +1,17 @@
-import io
-from PIL import Image
-from rembg import remove, new_session
+import os
+import requests
 
-# Global lightweight session (Startup par load hoga, request par nahi)
-session = new_session("u2netp")
+HF_TOKEN = os.environ.get("HF_TOKEN", "")
+API_URL = "https://api-inference.huggingface.co/models/briaai/RMBG-1.4"
 
 def remove_background(image_bytes: bytes) -> bytes:
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+    if not HF_TOKEN:
+        raise Exception("HF_TOKEN environment variable is not configured.")
+        
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    response = requests.post(API_URL, headers=headers, data=image_bytes, timeout=30)
     
-    # Downscale for instant processing on low CPU
-    image.thumbnail((800, 800), Image.Resampling.BILINEAR)
-    
-    output = remove(image, session=session)
-    
-    out_io = io.BytesIO()
-    output.save(out_io, format="PNG", optimize=True)
-    return out_io.getvalue()
+    if response.status_code != 200:
+        raise Exception(f"Hugging Face API Error: {response.text}")
+        
+    return response.content
