@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react';
 import { Mic, Square, Upload, Download, RefreshCw, Volume2, AlertCircle } from 'lucide-react';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = 'https://ai-media-cleanup.onrender.com';
 
 export default function AudioCleaner() {
   const [isRecording, setIsRecording] = useState(false);
@@ -66,7 +66,7 @@ export default function AudioCleaner() {
     formData.append('file', data, 'audio.wav');
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/clean-audio`, {
+      const res = await fetch(`${API_BASE_URL}/api/audio/clean`, {
         method: 'POST',
         body: formData,
       });
@@ -76,7 +76,7 @@ export default function AudioCleaner() {
       const blob = await res.blob();
       setCleanedAudio(URL.createObjectURL(blob));
     } catch (err) {
-      setError('Failed to process audio. Ensure backend server is running on port 8000.');
+      setError('Failed to process audio. Please try again.');
     } finally {
       setLoading(false);
     }

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Upload, Download, RefreshCw, Sparkles, AlertCircle } from 'lucide-react';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://ai-media-cleanup.onrender.com';
+const API_BASE_URL = 'https://ai-media-cleanup.onrender.com';
 
 export default function BgRemover() {
   const [originalImage, setOriginalImage] = useState<string | null>(null);
@@ -24,7 +24,7 @@ export default function BgRemover() {
     formData.append('file', file);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/remove-bg`, {
+      const res = await fetch(`${API_BASE_URL}/api/vision/remove-bg`, {
         method: 'POST',
         body: formData,
       });
@@ -34,7 +34,7 @@ export default function BgRemover() {
       const blob = await res.blob();
       setCleanedImage(URL.createObjectURL(blob));
     } catch (err) {
-      setError('Error processing image. Ensure backend server is active on port 8000.');
+      setError('Error processing image. Please try again.');
     } finally {
       setLoading(false);
     }
