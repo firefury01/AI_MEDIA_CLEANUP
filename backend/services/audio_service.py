@@ -3,25 +3,23 @@ import soundfile as sf
 import noisereduce as nr
 import numpy as np
 
-def clean_audio_stream(audio_bytes: bytes) -> bytes:
-    """
-    Reads incoming audio bytes in-memory, converts multichannel to mono,
-    executes multi-core stationary noise reduction, and outputs WAV bytes.
-    """
-    data, sample_rate = sf.read(io.BytesIO(audio_bytes))
-
-    if len(data.shape) > 1 and data.shape[1] > 1:
+def denoise_audio(audio_bytes: bytes) -> bytes:
+    data, rate = sf.read(io.BytesIO(audio_bytes))
+    
+    # Convert stereo to mono if needed for faster processing
+    if len(data.shape) > 1:
         data = np.mean(data, axis=1)
-
-    cleaned = nr.reduce_noise(
-        y=data,
-        sr=sample_rate,
-        stationary=True,
+    
+    # Fast stationary noise reduction
+    reduced_noise = nr.reduce_noise(
+        y=data, 
+        sr=rate, 
+        stationary=True, 
         prop_decrease=0.85,
         n_fft=1024,
-        n_jobs=-1
+        hop_length=512
     )
-
-    out_buffer = io.BytesIO()
-    sf.write(out_buffer, cleaned, sample_rate, format="WAV")
-    return out_buffer.getvalue()
+    
+    out_io = io.BytesIO()
+    sf.write(out_io, reduced_noise, rate, format='WAV', subtype='PCM_16')
+    return out_io.getvalue()
