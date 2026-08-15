@@ -10,10 +10,14 @@ def get_session():
         _session = new_session("u2netp")
     return _session
 
-def remove_background(image_bytes: bytes) -> bytes:
+def init_vision_model():
+    """Dummy startup hook to prevent main.py import error & keep startup instant"""
+    pass
+
+def remove_image_background(image_bytes: bytes) -> bytes:
     input_image = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
     
-    # Resize agar image bahut badi ho taaki fast process ho
+    # Large images resize for performance
     max_dim = 1200
     if max(input_image.size) > max_dim:
         input_image.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
@@ -24,3 +28,6 @@ def remove_background(image_bytes: bytes) -> bytes:
     output_buffer = io.BytesIO()
     output_image.save(output_buffer, format="PNG")
     return output_buffer.getvalue()
+
+# Alias for backwards compatibility
+remove_background = remove_image_background
