@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Upload, Download, RefreshCw, Sparkles, AlertCircle } from 'lucide-react';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://ai-media-cleanup.onrender.com';
 
 export default function BgRemover() {
   const [originalImage, setOriginalImage] = useState<string | null>(null);
