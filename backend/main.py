@@ -1,22 +1,16 @@
-
-import contextlib
+import os
+import uvicorn
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from fastapi.concurrency import run_in_threadpool
+from fastapi.middleware.cors import CORSMiddleware
 
-from services.audio_service import clean_audio_stream
-from services.vision_service import init_vision_model, remove_image_background
+# Services import
+from services.vision_service import remove_background
+from services.audio_service import denoise_audio
 
-@contextlib.asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Preload the lightweight, fast U2-Net model on startup
-    init_vision_model("u2netp")
-    yield
+app = FastAPI(title="AI Media Cleanup")
 
-app = FastAPI(title="AI Media Cleanup API", lifespan=lifespan)
-
-# Allow Cross-Origin Requests from Frontend
+# Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,30 +19,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+def read_root():
+    return {"status": "ok", "message": "AI Media Cleanup API is running"}
+
 @app.get("/health")
 def health_check():
-    return {"status": "online", "version": "1.0.0"}
+    return {"status": "ok"}
 
-@app.post("/api/clean-audio")
-async def clean_audio_endpoint(file: UploadFile = File(...)):
+# Vision endpoint matching frontend call exactly
+@app.post("/api/vision/remove-bg")
+async def vision_remove_bg(file: UploadFile = File(...)):
     try:
-        audio_bytes = await file.read()
-        if not audio_bytes:
-            raise HTTPException(status_code=400, detail="Empty file received.")
-        
-        result_bytes = await run_in_threadpool(clean_audio_stream, audio_bytes)
-        return Response(content=result_bytes, media_type="audio/wav")
+        contents = await file.read()
+        output_bytes = remove_background(contents)
+        return Response(content=output_bytes, media_type="image/png")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Audio processing failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/remove-bg")
-async def remove_bg_endpoint(file: UploadFile = File(...)):
+# Audio endpoint matching frontend call exactly
+@app.post("/api/audio/clean")
+async def audio_clean(file: UploadFile = File(...)):
     try:
-        image_bytes = await file.read()
-        if not image_bytes:
-            raise HTTPException(status_code=400, detail="Empty file received.")
-
-        result_bytes = await run_in_threadpool(remove_image_background, image_bytes)
-        return Response(content=result_bytes, media_type="image/png")
+        contents = await file.read()
+        output_bytes = denoise_audio(contents)
+        return Response(content=output_bytes, media_type="audio/wav")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Background removal failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
