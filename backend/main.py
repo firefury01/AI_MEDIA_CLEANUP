@@ -25,9 +25,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
-@app.get("/health")
-def health():
+# Render HEAD/GET health check endpoints (Fixes 405 Method Not Allowed)
+@app.api_route("/", methods=["GET", "HEAD"])
+@app.api_route("/health", methods=["GET", "HEAD"])
+def health_check():
     return {"status": "ok"}
 
 @app.post("/api/vision/remove-bg")
