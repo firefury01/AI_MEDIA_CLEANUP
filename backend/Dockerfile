@@ -2,7 +2,7 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# OpenCV required dependencies
+# System dependencies for OpenCV & Image processing
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
@@ -13,8 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Expose default port 8000
-EXPOSE 8000
+# Render dynamically injects $PORT (default to 8000 if not set)
+ENV PORT=8000
 
-# Direct exec form (0.1s instant boot, zero startup latency)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Shell form use karna zaroori hai taaki $PORT expand ho sake
+CMD sh -c "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"
