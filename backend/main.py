@@ -8,6 +8,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 app = FastAPI(title="AI Media Cleanup Studio Backend")
+# Handle root probes (GET & HEAD)
+@app.get("/")
+@app.head("/")
+def root():
+    return {"status": "healthy", "service": "AI Vision Studio Backend"}
+
+# Render Health Check Probe
+@app.get("/health")
+@app.head("/health")
+def health_check():
+    return {"status": "ok"}
 
 # Enable CORS for all incoming frontend connections
 app.add_middleware(
