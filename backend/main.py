@@ -1,23 +1,22 @@
-import io
-from typing import List
-from PIL import Image
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+import os
+import uvicorn
 
 from services.vision_service import (
     remove_background,
     upscale_and_enhance,
     clean_document_lighting,
-    denoise_and_restore,
+    denoise_image_fast,
     compress_to_target_kb,
-    extract_signature,
-    make_passport_photo,
+    extract_clean_signature,
+    generate_passport_photo,
+    convert_images_to_pdf,
 )
 
-app = FastAPI(title="AI Media Cleanup Studio API")
+app = FastAPI(title="AI Media Cleanup Studio Backend", version="1.0.0")
 
-# Enable CORS for Next.js frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,121 +25,59 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# --- Health Check Endpoints (For Render) ---
-
 @app.get("/")
-@app.head("/")
-def root():
-    return {"status": "healthy", "service": "AI Vision Studio Backend"}
-
-
 @app.get("/health")
-@app.head("/health")
-def health_check():
+def health():
     return {"status": "ok"}
-
-
-# --- Vision Tool Endpoints ---
 
 @app.post("/api/vision/remove-bg")
 async def api_remove_bg(file: UploadFile = File(...)):
-    try:
-        content = await file.read()
-        result = remove_background(content)
-        return Response(content=result, media_type="image/png")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+    data = await file.read()
+    res = remove_background(data)
+    return Response(content=res, media_type="image/png")
 
 @app.post("/api/vision/upscale")
-async def api_upscale(file: UploadFile = File(...), scale: int = Form(2)):
-    try:
-        content = await file.read()
-        result = upscale_and_enhance(content, scale_factor=scale)
-        return Response(content=result, media_type="image/jpeg")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+async def api_upscale(file: UploadFile = File(...)):
+    data = await file.read()
+    res = upscale_and_enhance(data)
+    return Response(content=res, media_type="image/jpeg")
 
 @app.post("/api/vision/document-clean")
-async def api_document_clean(file: UploadFile = File(...)):
-    try:
-        content = await file.read()
-        result = clean_document_lighting(content)
-        return Response(content=result, media_type="image/png")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+async def api_doc_clean(file: UploadFile = File(...)):
+    data = await file.read()
+    res = clean_document_lighting(data)
+    return Response(content=res, media_type="image/jpeg")
 
 @app.post("/api/vision/denoise")
 async def api_denoise(file: UploadFile = File(...)):
-    try:
-        content = await file.read()
-        result = denoise_and_restore(content)
-        return Response(content=result, media_type="image/png")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/vision/image-to-pdf")
-async def api_image_to_pdf(files: List[UploadFile] = File(...)):
-    try:
-        if not files:
-            raise HTTPException(status_code=400, detail="No files provided")
-
-        pil_images = []
-        for upload_file in files:
-            data = await upload_file.read()
-            img = Image.open(io.BytesIO(data))
-            if img.mode != "RGB":
-                img = img.convert("RGB")
-            pil_images.append(img)
-
-        pdf_bytes_io = io.BytesIO()
-        first_image = pil_images[0]
-        rest_images = pil_images[1:] if len(pil_images) > 1 else []
-
-        first_image.save(
-            pdf_bytes_io,
-            format="PDF",
-            save_all=True,
-            append_images=rest_images,
-            resolution=100.0,
-        )
-
-        return Response(content=pdf_bytes_io.getvalue(), media_type="application/pdf")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# --- New Added Tools ---
+    data = await file.read()
+    res = denoise_image_fast(data)
+    return Response(content=res, media_type="image/jpeg")
 
 @app.post("/api/vision/compress-kb")
 async def api_compress_kb(file: UploadFile = File(...), target_kb: int = Form(50)):
-    try:
-        content = await file.read()
-        result = compress_to_target_kb(content, target_kb=target_kb)
-        return Response(content=result, media_type="image/jpeg")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+    data = await file.read()
+    res = compress_to_target_kb(data, target_kb)
+    return Response(content=res, media_type="image/jpeg")
 
 @app.post("/api/vision/signature-extract")
 async def api_signature_extract(file: UploadFile = File(...)):
-    try:
-        content = await file.read()
-        result = extract_signature(content)
-        return Response(content=result, media_type="image/png")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+    data = await file.read()
+    res = extract_clean_signature(data)
+    return Response(content=res, media_type="image/png")
 
 @app.post("/api/vision/passport-maker")
 async def api_passport_maker(file: UploadFile = File(...), bg_color: str = Form("white")):
-    try:
-        content = await file.read()
-        result = make_passport_photo(content, bg_color=bg_color)
-        return Response(content=result, media_type="image/jpeg")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    data = await file.read()
+    res = generate_passport_photo(data, bg_color)
+    return Response(content=res, media_type="image/jpeg")
+
+@app.post("/api/vision/image-to-pdf")
+async def api_image_to_pdf(files: list[UploadFile] = File(...)):
+    raw_list = [await f.read() for f in files]
+    res = convert_images_to_pdf(raw_list)
+    return Response(content=res, media_type="application/pdf")
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, log_level="info")

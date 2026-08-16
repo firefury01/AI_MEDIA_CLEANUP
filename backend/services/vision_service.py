@@ -5,7 +5,7 @@ import onnxruntime as ort
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from rembg import remove, new_session
 
-# Global session variable for lazy loading (Prevents Render startup timeout)
+# Global session variable for lazy loading
 BG_SESSION = None
 
 def get_bg_session():
@@ -23,7 +23,7 @@ def get_bg_session():
 
 
 def remove_background(image_bytes: bytes) -> bytes:
-    """Instant background removal capped to 800px for high speed."""
+    """Instant background removal capped to 800px for speed."""
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
         img.thumbnail((800, 800), Image.Resampling.BILINEAR)
@@ -61,6 +61,9 @@ def upscale_image_fast(image_bytes: bytes, scale_factor: float = 2.0) -> bytes:
     except Exception as e:
         print(f"[ERROR upscale]: {e}")
         raise Exception(f"Upscaling Failed: {str(e)}")
+
+# Alias to resolve import name mismatch in main.py
+upscale_and_enhance = upscale_image_fast
 
 
 def clean_document_lighting(image_bytes: bytes) -> bytes:
@@ -122,7 +125,6 @@ def compress_to_target_kb(image_bytes: bytes, target_kb: int = 50) -> bytes:
         max_quality = 95
         best_output = None
 
-        # Binary search quality steps
         for _ in range(8):
             mid_quality = (min_quality + max_quality) // 2
             out_io = io.BytesIO()
@@ -135,7 +137,6 @@ def compress_to_target_kb(image_bytes: bytes, target_kb: int = 50) -> bytes:
             else:
                 max_quality = mid_quality - 1
 
-        # Downscale dimension if still above target size at lowest quality
         if best_output is None or len(best_output) > target_bytes:
             w, h = img.size
             for scale in [0.75, 0.5, 0.35]:
@@ -153,7 +154,7 @@ def compress_to_target_kb(image_bytes: bytes, target_kb: int = 50) -> bytes:
 
 
 def extract_clean_signature(image_bytes: bytes) -> bytes:
-    """Removes off-white/yellowish paper backgrounds to leave dark transparent ink."""
+    """Removes paper backgrounds to leave dark transparent ink."""
     try:
         np_arr = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
@@ -161,13 +162,11 @@ def extract_clean_signature(image_bytes: bytes) -> bytes:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         
-        # Adaptive thresholding to pick up subtle ink strokes
         thresh = cv2.adaptiveThreshold(
             blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 10
         )
 
         b, g, r = cv2.split(img)
-        # Invert stroke mask to alpha transparency
         alpha = thresh
         rgba = cv2.merge([b, g, r, alpha])
 
@@ -181,19 +180,15 @@ def extract_clean_signature(image_bytes: bytes) -> bytes:
 
 
 def generate_passport_photo(image_bytes: bytes, bg_color: str = "white") -> bytes:
-    """Isolates person and mounts over standard white or royal blue passport backdrop (3.5x4.5cm)."""
+    """Isolates person and mounts over white/blue 3.5x4.5cm passport backdrop."""
     try:
-        # Step 1: Remove background
         cutout_bytes = remove_background(image_bytes)
         cutout_img = Image.open(io.BytesIO(cutout_bytes)).convert("RGBA")
 
-        # Standard passport size 350x450 px (3.5cm x 4.5cm ratio)
         canvas_w, canvas_h = 350, 450
         fill_rgb = (255, 255, 255) if bg_color.lower() == "white" else (30, 80, 180)
 
         canvas = Image.new("RGB", (canvas_w, canvas_h), fill_rgb)
-
-        # Scale portrait to fit inside passport canvas
         cutout_img.thumbnail((canvas_w, canvas_h), Image.Resampling.LANCZOS)
         offset_x = (canvas_w - cutout_img.width) // 2
         offset_y = canvas_h - cutout_img.height
