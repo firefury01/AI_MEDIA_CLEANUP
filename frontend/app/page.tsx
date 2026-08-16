@@ -113,7 +113,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   
   // Default to Render URL to avoid Next.js domain 404
-  const [backendBaseUrl, setBackendBaseUrl] = useState("https://ai-media-cleanup.onrender.com");
+  const [backendBaseUrl, setBackendBaseUrl] = useState("https://ai-media-cleanup-1.onrender.com/");
 
   // Options & Comparison
   const [targetKb, setTargetKb] = useState<number>(50);
@@ -127,7 +127,7 @@ export default function Home() {
       if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
         setBackendBaseUrl("http://127.0.0.1:8000");
       } else {
-        setBackendBaseUrl("https://ai-media-cleanup.onrender.com");
+        setBackendBaseUrl("https://ai-media-cleanup-1.onrender.com/");
       }
     }
   }, []);
@@ -171,7 +171,7 @@ export default function Home() {
     try {
       const activeBase = (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"))
         ? "http://127.0.0.1:8000"
-        : "https://ai-media-cleanup.onrender.com";
+        : "https://ai-media-cleanup-1.onrender.com";
 
       const targetUrl = `${activeBase}${endpointPath}`;
       const controller = new AbortController();
