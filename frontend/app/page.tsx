@@ -5,7 +5,6 @@ import {
   Sparkles,
   Upload,
   Download,
-  RefreshCw,
   Layers,
   FileText,
   Zap,
@@ -112,7 +111,9 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<string>("Analyzing image...");
   const [error, setError] = useState<string | null>(null);
-  const [backendBaseUrl, setBackendBaseUrl] = useState("http://127.0.0.1:8000");
+  
+  // Default to Render URL to avoid Next.js domain 404
+  const [backendBaseUrl, setBackendBaseUrl] = useState("https://ai-media-cleanup.onrender.com");
 
   // Options & Comparison
   const [targetKb, setTargetKb] = useState<number>(50);
@@ -168,7 +169,11 @@ export default function Home() {
     }
 
     try {
-      const targetUrl = `${backendBaseUrl}${endpointPath}`;
+      const activeBase = (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"))
+        ? "http://127.0.0.1:8000"
+        : "https://ai-media-cleanup.onrender.com";
+
+      const targetUrl = `${activeBase}${endpointPath}`;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000);
 
