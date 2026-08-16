@@ -65,13 +65,12 @@ export default function Home() {
   const [backendBaseUrl, setBackendBaseUrl] = useState("http://127.0.0.1:8000");
 
   useEffect(() => {
-    // Auto-detect environment: Localhost vs LocalTunnel
+    // Auto-detect environment: Localhost vs Render Production
     if (typeof window !== "undefined") {
       if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
         setBackendBaseUrl("http://127.0.0.1:8000");
       } else {
-        // Tunnel URL for remote / mobile access
-        setBackendBaseUrl("https://my-studio-backend-api.loca.lt");
+        setBackendBaseUrl("https://ai-media-cleanup.onrender.com");
       }
     }
   }, []);
@@ -88,22 +87,18 @@ export default function Home() {
     if (activeTool === "image-to-pdf") {
       files.forEach((f) => formData.append("files", f));
     } else {
-      // Process the latest selected/added image for single-image vision tools
       formData.append("file", files[files.length - 1]);
     }
 
     try {
       const targetUrl = `${backendBaseUrl}${endpointPath}`;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout for initial cold starts
 
       const response = await fetch(targetUrl, {
         method: "POST",
         body: formData,
         signal: controller.signal,
-        headers: {
-          "Bypass-Tunnel-Reminder": "true", // Skips localtunnel reminder headers
-        },
       });
 
       clearTimeout(timeoutId);
@@ -118,7 +113,7 @@ export default function Home() {
       setProcessedResultUrl(outputUrl);
     } catch (err: any) {
       if (err.name === "AbortError") {
-        setError("Request timed out. Verify the backend server is running.");
+        setError("Request timed out. Backend may be waking up from free tier sleep, please retry in a few moments.");
       } else {
         setError(err.message || "Failed to process image.");
       }
@@ -148,7 +143,6 @@ export default function Home() {
     processFiles(updatedFiles, currentTool.endpointPath);
   };
 
-  // Har naye tool par switch karne par screen clean ho jayegi
   const switchTool = (toolId: ToolType) => {
     setActiveTool(toolId);
     setSelectedPreviews([]);
@@ -284,7 +278,6 @@ export default function Home() {
             {/* Action Buttons */}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
               <div className="flex items-center gap-2">
-                {/* Add More Button */}
                 <label className="px-4 py-2.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-xl cursor-pointer text-xs font-medium transition inline-flex items-center gap-2">
                   <Plus className="w-3.5 h-3.5" /> Add More Images
                   <input
@@ -296,7 +289,6 @@ export default function Home() {
                   />
                 </label>
 
-                {/* Upload Fresh / Replace All */}
                 <label className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl cursor-pointer text-xs font-medium transition inline-flex items-center gap-2">
                   <Upload className="w-3.5 h-3.5" /> Replace All
                   <input
