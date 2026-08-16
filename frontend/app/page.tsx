@@ -111,9 +111,6 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<string>("Analyzing image...");
   const [error, setError] = useState<string | null>(null);
-  
-  // Default to Render URL to avoid Next.js domain 404
-  const [backendBaseUrl, setBackendBaseUrl] = useState("https://ai-media-cleanup-1.onrender.com/");
 
   // Options & Comparison
   const [targetKb, setTargetKb] = useState<number>(50);
@@ -121,16 +118,6 @@ export default function Home() {
   const [sliderPos, setSliderPos] = useState<number>(50);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<"slider" | "side-by-side">("slider");
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-        setBackendBaseUrl("http://127.0.0.1:8000");
-      } else {
-        setBackendBaseUrl("https://ai-media-cleanup-1.onrender.com/");
-      }
-    }
-  }, []);
 
   const currentTool = TOOLS.find((t) => t.id === activeTool)!;
 
@@ -152,8 +139,8 @@ export default function Home() {
     setProcessedSize(null);
 
     setLoadingStep("Uploading image payload...");
-    const timer1 = setTimeout(() => setLoadingStep("Running computer vision pipeline..."), 1200);
-    const timer2 = setTimeout(() => setLoadingStep("Enhancing & rendering output..."), 3500);
+    const timer1 = setTimeout(() => setLoadingStep("Running computer vision pipeline..."), 1500);
+    const timer2 = setTimeout(() => setLoadingStep("Enhancing & rendering output..."), 4500);
 
     const formData = new FormData();
     if (activeTool === "image-to-pdf") {
@@ -169,13 +156,17 @@ export default function Home() {
     }
 
     try {
-      const activeBase = (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"))
-        ? "http://127.0.0.1:8000"
-        : "https://ai-media-cleanup-1.onrender.com";
+      const activeBase =
+        typeof window !== "undefined" &&
+        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+          ? "http://127.0.0.1:8000"
+          : "https://ai-media-cleanup-1.onrender.com";
 
       const targetUrl = `${activeBase}${endpointPath}`;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      
+      // 90 seconds timeout for free-tier container cold start & AI weights inference
+      const timeoutId = setTimeout(() => controller.abort(), 90000);
 
       const response = await fetch(targetUrl, {
         method: "POST",
@@ -198,7 +189,7 @@ export default function Home() {
       setProcessedResultUrl(outputUrl);
     } catch (err: any) {
       if (err.name === "AbortError") {
-        setError("Request timed out. Backend free-tier is waking up, please retry in 10-15 seconds.");
+        setError("Request timed out. Backend free-tier is warming up, please retry in a few seconds.");
       } else {
         setError(err.message || "Failed to process image.");
       }
