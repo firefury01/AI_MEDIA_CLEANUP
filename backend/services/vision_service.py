@@ -3,62 +3,77 @@ import cv2
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter
 
-# Lazy session holder
-_rembg_remove = None
-_rembg_session = None
-
-def get_rembg_components():
-    global _rembg_remove, _rembg_session
-    if _rembg_remove is None:
-        # Import inside function so server starts instantly without blocking port bind
-        from rembg import remove, new_session
-        _rembg_remove = remove
-        _rembg_session = new_session("u2netp")
-    return _rembg_remove, _rembg_session
-
-
 def remove_background(image_bytes: bytes) -> bytes:
-    """Isolate foreground subject with transparent alpha cutout."""
-    pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+    """Instant Zero-Load background remover using OpenCV contour & GrabCut segmentation."""
+    np_arr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError("Invalid image file")
+
+    h, w = img.shape[:2]
     
-    orig_w, orig_h = pil_image.size
-    max_side = 720
-    if max(orig_w, orig_h) > max_side:
-        pil_image.thumbnail((max_side, max_side), Image.Resampling.BILINEAR)
-        
-    rem_fn, session = get_rembg_components()
-    output_image = rem_fn(pil_image, session=session)
+    # Scale down for ultra-fast instant computation
+    max_dim = 600
+    scale = 1.0
+    if max(h, w) > max_dim:
+        scale = max_dim / max(h, w)
+        img_small = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+    else:
+        img_small = img.copy()
+
+    sh, sw = img_small.shape[:2]
     
-    if (orig_w, orig_h) != output_image.size:
-        output_image = output_image.resize((orig_w, orig_h), Image.Resampling.BILINEAR)
+    # GrabCut Initialization
+    mask = np.zeros((sh, sw), np.uint8)
+    bgd_model = np.zeros((1, 65), np.float64)
+    fgd_model = np.zeros((1, 65), np.float64)
+    
+    # Target central subject bounding box
+    margin_x = int(sw * 0.05)
+    margin_y = int(sh * 0.05)
+    rect = (margin_x, margin_y, sw - (2 * margin_x), sh - (2 * margin_y))
+    
+    cv2.grabCut(img_small, mask, rect, bgd_model, fgd_model, 3, cv2.GC_INIT_WITH_RECT)
+    
+    # Generate binary mask
+    bin_mask = np.where((mask == 2) | (mask == 0), 0, 255).astype("uint8")
+    
+    # Smooth edges
+    bin_mask = cv2.GaussianBlur(bin_mask, (5, 5), 0)
+    
+    # Resize mask back to original resolution
+    if scale != 1.0:
+        bin_mask = cv2.resize(bin_mask, (w, h), interpolation=cv2.INTER_LINEAR)
         
-    buffer = io.BytesIO()
-    output_image.save(buffer, format="PNG", optimize=True)
-    return buffer.getvalue()
+    b, g, r = cv2.split(img)
+    rgba = cv2.merge([b, g, r, bin_mask])
+    
+    _, buffer = cv2.imencode(".png", rgba)
+    return buffer.tobytes()
 
 
 def upscale_and_enhance(image_bytes: bytes) -> bytes:
-    """2x Super-resolution via Lanczos interpolation + unsharp masking."""
+    """Instant 2x High-Quality Super Resolution."""
     pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     new_w = pil_image.width * 2
     new_h = pil_image.height * 2
     
     upscaled = pil_image.resize((new_w, new_h), Image.Resampling.LANCZOS)
-    sharpened = upscaled.filter(ImageFilter.UnsharpMask(radius=2, percent=130, threshold=3))
+    sharpened = upscaled.filter(ImageFilter.UnsharpMask(radius=2, percent=120, threshold=3))
     enhancer = ImageEnhance.Contrast(sharpened)
-    final_image = enhancer.enhance(1.08)
+    final_image = enhancer.enhance(1.05)
     
     buffer = io.BytesIO()
-    final_image.save(buffer, format="JPEG", quality=92, optimize=True)
+    final_image.save(buffer, format="JPEG", quality=90, optimize=True)
     return buffer.getvalue()
 
 
 def clean_document_lighting(image_bytes: bytes) -> bytes:
-    """Even out uneven lighting/shadows and boost document legibility."""
+    """Document Contrast Booster and Shadow Removal."""
     np_arr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-    
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
     dilated = cv2.dilate(gray, np.ones((7, 7), np.uint8))
     bg_model = cv2.medianBlur(dilated, 21)
     
@@ -71,27 +86,26 @@ def clean_document_lighting(image_bytes: bytes) -> bytes:
 
 
 def denoise_image_fast(image_bytes: bytes) -> bytes:
-    """Fast Bilateral filter to remove sensor/grain noise while preserving sharp edges."""
+    """Fast Bilateral Denoising."""
     np_arr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
     
     denoised = cv2.bilateralFilter(img, d=7, sigmaColor=50, sigmaSpace=50)
     
-    _, buffer = cv2.imencode(".jpg", denoised, [cv2.IMWRITE_JPEG_QUALITY, 92])
+    _, buffer = cv2.imencode(".jpg", denoised, [cv2.IMWRITE_JPEG_QUALITY, 90])
     return buffer.tobytes()
 
 
 def compress_to_target_kb(image_bytes: bytes, target_kb: int = 50) -> bytes:
-    """Iteratively compress and scale image to fit strictly under target KB limit."""
+    """Strict Target KB Compression."""
     pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     target_bytes = target_kb * 1024
     
     quality = 90
-    min_quality = 15
     buffer = io.BytesIO()
     pil_image.save(buffer, format="JPEG", quality=quality, optimize=True)
     
-    while buffer.tell() > target_bytes and quality > min_quality:
+    while buffer.tell() > target_bytes and quality > 15:
         quality -= 8
         buffer = io.BytesIO()
         pil_image.save(buffer, format="JPEG", quality=quality, optimize=True)
@@ -109,7 +123,7 @@ def compress_to_target_kb(image_bytes: bytes, target_kb: int = 50) -> bytes:
 
 
 def extract_clean_signature(image_bytes: bytes) -> bytes:
-    """Extract handwritten ink signature on a clean transparent PNG."""
+    """Extract Ink Signature on Transparent PNG."""
     np_arr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -126,7 +140,7 @@ def extract_clean_signature(image_bytes: bytes) -> bytes:
 
 
 def generate_passport_photo(image_bytes: bytes, bg_color: str = "white") -> bytes:
-    """Crop subject to standard 3.5:4.5 passport aspect ratio with chosen background."""
+    """Passport Photo Maker with Clean Background Composite."""
     cutout_bytes = remove_background(image_bytes)
     foreground = Image.open(io.BytesIO(cutout_bytes)).convert("RGBA")
     
@@ -154,19 +168,15 @@ def generate_passport_photo(image_bytes: bytes, bg_color: str = "white") -> byte
 
 
 def convert_images_to_pdf(image_bytes_list: list[bytes]) -> bytes:
-    """Compile multiple images into a clean single PDF file."""
+    """Compile Multiple Images to PDF."""
     pil_images = []
     for img_data in image_bytes_list:
         if img_data:
-            img = Image.open(io.BytesIO(img_data)).convert("RGB")
-            pil_images.append(img)
+            pil_images.append(Image.open(io.BytesIO(img_data)).convert("RGB"))
             
     if not pil_images:
-        raise ValueError("No valid image data provided.")
+        raise ValueError("No images provided for PDF")
         
     pdf_buffer = io.BytesIO()
-    first_img = pil_images[0]
-    rest_images = pil_images[1:]
-    
-    first_img.save(pdf_buffer, format="PDF", save_all=True, append_images=rest_images)
+    pil_images[0].save(pdf_buffer, format="PDF", save_all=True, append_images=pil_images[1:])
     return pdf_buffer.getvalue()

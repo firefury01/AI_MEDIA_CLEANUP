@@ -6,10 +6,7 @@ from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 import services.vision_service as vs
 
-os.environ["ORT_DISABLE_TELEMETRY"] = "1"
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
-
-app = FastAPI(title="AI Media Cleanup Studio Backend", version="1.0.0")
+app = FastAPI(title="AI Media Cleanup API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,7 +24,6 @@ def health_check():
 @app.post("/api/vision/remove-bg")
 async def api_remove_bg(file: UploadFile = File(...)):
     data = await file.read()
-    # Run in background thread pool to prevent event-loop freeze
     res = await run_in_threadpool(vs.remove_background, data)
     return Response(content=res, media_type="image/png")
 
