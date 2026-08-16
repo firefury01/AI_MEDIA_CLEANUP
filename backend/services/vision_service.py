@@ -2,17 +2,19 @@ import io
 import cv2
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter
-from rembg import remove, new_session
 
-# Global lazy session container (Startup freeze avoid karne ke liye)
-_session = None
+# Lazy session holder
+_rembg_remove = None
+_rembg_session = None
 
-def get_rembg_session():
-    global _session
-    if _session is None:
-        # Fast & lightweight model for CPU instances
-        _session = new_session("u2netp")
-    return _session
+def get_rembg_components():
+    global _rembg_remove, _rembg_session
+    if _rembg_remove is None:
+        # Import inside function so server starts instantly without blocking port bind
+        from rembg import remove, new_session
+        _rembg_remove = remove
+        _rembg_session = new_session("u2netp")
+    return _rembg_remove, _rembg_session
 
 
 def remove_background(image_bytes: bytes) -> bytes:
@@ -20,12 +22,12 @@ def remove_background(image_bytes: bytes) -> bytes:
     pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
     
     orig_w, orig_h = pil_image.size
-    max_side = 800
+    max_side = 720
     if max(orig_w, orig_h) > max_side:
         pil_image.thumbnail((max_side, max_side), Image.Resampling.BILINEAR)
         
-    session = get_rembg_session()
-    output_image = remove(pil_image, session=session)
+    rem_fn, session = get_rembg_components()
+    output_image = rem_fn(pil_image, session=session)
     
     if (orig_w, orig_h) != output_image.size:
         output_image = output_image.resize((orig_w, orig_h), Image.Resampling.BILINEAR)
@@ -41,10 +43,7 @@ def upscale_and_enhance(image_bytes: bytes) -> bytes:
     new_w = pil_image.width * 2
     new_h = pil_image.height * 2
     
-    # 2x High quality resize
     upscaled = pil_image.resize((new_w, new_h), Image.Resampling.LANCZOS)
-    
-    # Edge sharpening & contrast tuning
     sharpened = upscaled.filter(ImageFilter.UnsharpMask(radius=2, percent=130, threshold=3))
     enhancer = ImageEnhance.Contrast(sharpened)
     final_image = enhancer.enhance(1.08)
@@ -59,18 +58,12 @@ def clean_document_lighting(image_bytes: bytes) -> bytes:
     np_arr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
     
-    # Convert to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
-    # Background illumination estimation using morphological closing
     dilated = cv2.dilate(gray, np.ones((7, 7), np.uint8))
     bg_model = cv2.medianBlur(dilated, 21)
     
-    # Difference to remove uneven lighting
     diff = 255 - cv2.absdiff(gray, bg_model)
     norm = cv2.normalize(diff, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8UC1)
-    
-    # Adaptive threshold to sharpen text characters
     cleaned = cv2.adaptiveThreshold(norm, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, 8)
     
     _, buffer = cv2.imencode(".jpg", cleaned, [cv2.IMWRITE_JPEG_QUALITY, 90])
@@ -98,13 +91,11 @@ def compress_to_target_kb(image_bytes: bytes, target_kb: int = 50) -> bytes:
     buffer = io.BytesIO()
     pil_image.save(buffer, format="JPEG", quality=quality, optimize=True)
     
-    # Binary search / step-down compression loop
     while buffer.tell() > target_bytes and quality > min_quality:
         quality -= 8
         buffer = io.BytesIO()
         pil_image.save(buffer, format="JPEG", quality=quality, optimize=True)
         
-    # Resize down if quality reduction alone isn't enough
     while buffer.tell() > target_bytes:
         new_w = int(pil_image.width * 0.85)
         new_h = int(pil_image.height * 0.85)
@@ -121,20 +112,14 @@ def extract_clean_signature(image_bytes: bytes) -> bytes:
     """Extract handwritten ink signature on a clean transparent PNG."""
     np_arr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-    
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
-    # Invert threshold so ink is white, paper is black
     _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    
-    # Clean small pepper noise
     kernel = np.ones((2, 2), np.uint8)
     cleaned_mask = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
     
-    # Create BGRA image with dark blue/black ink and transparent paper
     b, g, r = cv2.split(img)
-    alpha = cleaned_mask
-    rgba = cv2.merge([b, g, r, alpha])
+    rgba = cv2.merge([b, g, r, cleaned_mask])
     
     _, buffer = cv2.imencode(".png", rgba)
     return buffer.tobytes()
@@ -142,18 +127,13 @@ def extract_clean_signature(image_bytes: bytes) -> bytes:
 
 def generate_passport_photo(image_bytes: bytes, bg_color: str = "white") -> bytes:
     """Crop subject to standard 3.5:4.5 passport aspect ratio with chosen background."""
-    # First get cutout with transparent alpha
     cutout_bytes = remove_background(image_bytes)
     foreground = Image.open(io.BytesIO(cutout_bytes)).convert("RGBA")
     
-    # Create solid background
     bg_rgb = (255, 255, 255) if bg_color.lower() == "white" else (35, 120, 240)
     background = Image.new("RGBA", foreground.size, (*bg_rgb, 255))
-    
-    # Composite foreground on top of background
     combined = Image.alpha_composite(background, foreground).convert("RGB")
     
-    # Crop to 3.5 x 4.5 ratio centered
     w, h = combined.size
     target_aspect = 3.5 / 4.5
     current_aspect = w / h
@@ -168,7 +148,6 @@ def generate_passport_photo(image_bytes: bytes, bg_color: str = "white") -> byte
         combined = combined.crop((0, top, w, top + new_h))
         
     passport_final = combined.resize((413, 531), Image.Resampling.LANCZOS)
-    
     buffer = io.BytesIO()
     passport_final.save(buffer, format="JPEG", quality=95)
     return buffer.getvalue()
@@ -183,7 +162,7 @@ def convert_images_to_pdf(image_bytes_list: list[bytes]) -> bytes:
             pil_images.append(img)
             
     if not pil_images:
-        raise ValueError("No valid image data provided for PDF conversion.")
+        raise ValueError("No valid image data provided.")
         
     pdf_buffer = io.BytesIO()
     first_img = pil_images[0]
